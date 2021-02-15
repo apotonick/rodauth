@@ -104,7 +104,6 @@ class ApotonickApiTest < Minitest::Spec
       end
 
       def send_verify_account_email # FIXME: for now, we want that done manually in Tyrant.
-
       end
 
       def account_password_hash_column
@@ -142,7 +141,7 @@ class ApotonickApiTest < Minitest::Spec
 
 
 # if create_account_set_password?
-    if  password != password_confirm # FIXME: this is "logic" copied from {create_account:54}, we put that in {lib.CreateAccount}
+    if password != password_confirm # FIXME: this is "logic" copied from {create_account:54}, we put that in {lib.CreateAccount}
       raise # Rodauth throws an error here
     else
       # we skip password hash
@@ -152,6 +151,8 @@ class ApotonickApiTest < Minitest::Spec
         #      :password_hashed=>
         #       "$2a$12$YBwAo1wNThzSNKzqUVjqkOvHhr/2ZcRFX/jPr784qVd1VTh26fywa",
         #      :id=>1}
+  # account created
+      assert_equal 60, db[:users].rows[0][:password_hashed].size
 
 
       # this usually happens via a {after_create_account} hook
@@ -160,6 +161,10 @@ class ApotonickApiTest < Minitest::Spec
       pp db[:account_verification_keys] # {:id,:key}
       # #<struct ApotonickApiTest::Table
       #   rows=[{:id=>1, :key=>"howmanycharactersdoweneed?"}]>
+
+  # account_verification_key is set!
+      assert verification_token = db[:account_verification_keys].rows[0][:key]
+      assert_equal 43, verification_token.size
 
     end
   end
