@@ -30,7 +30,7 @@ class ApotonickApiTest < Minitest::Spec
 
         # return rows[0] if options[:id] == 1
         return self if set.empty?
-        return Gettable.new(set)
+        return Gettable.new(set, rows)
         # return []  # fixme: USE REAL SEQUEL
 
       end
@@ -40,22 +40,40 @@ class ApotonickApiTest < Minitest::Spec
       end
 
       class Gettable
-        def initialize(set)
-          @set = set
+        def initialize(set, rows)
+          @set = set # TODO: this should be just one item
+          @rows = rows # original set
         end
 
         def get(key)
           # raise key.inspect
           @set[0][key]
         end
+
+        def delete
+          @rows.delete(@set[0]) # yay to mutations!
+        end
+
+        def empty?
+          @set.empty?
+        end
       end
     end
+
     db = DB.new(
       {
         :users => Table.new([]),
         :account_verification_keys => Table.new([]),
       }
     )
+
+    module ResetVerifyAccountKey
+      def reset_verify_account_key # DISCUSS: should we add this to Rodauth itself? See https://twitter.com/jeremyevans0/status/1361346774703562758
+        remove_verify_account_key
+        generate_verify_account_key_value
+        create_verify_account_key
+      end
+    end
 
 
     api = Class.new do
@@ -66,7 +84,6 @@ class ApotonickApiTest < Minitest::Spec
       attr_reader :db
 
 
-      # include Rodauth::FEATURES[:create_account]
       include Rodauth::FEATURES[:create_account]
       include Rodauth::FEATURES[:verify_account]
       include Rodauth::FEATURES[:login_password_requirements_base] # {#password_hash} and friends.
@@ -124,7 +141,11 @@ class ApotonickApiTest < Minitest::Spec
         super()
       end
       attr_reader :account
+
+      include ResetVerifyAccountKey
     end.new(db)
+
+
 
 
     # For {Create account} we need {:login}, {:password}, {:password_confirm}
@@ -151,7 +172,7 @@ class ApotonickApiTest < Minitest::Spec
         #      :password_hashed=>
         #       "$2a$12$YBwAo1wNThzSNKzqUVjqkOvHhr/2ZcRFX/jPr784qVd1VTh26fywa",
         #      :id=>1}
-  # account created
+  # account CREATED
       assert_equal 60, db[:users].rows[0][:password_hashed].size
 
 
@@ -166,6 +187,15 @@ class ApotonickApiTest < Minitest::Spec
       assert verification_token = db[:account_verification_keys].rows[0][:key]
       assert_equal 43, verification_token.size
 
+  # RESET {verification_key}
+  #   TODO: what about email?
+      api.reset_verify_account_key
+
+      assert new_verification_token = db[:account_verification_keys].rows[0][:key]
+      assert_equal 43, new_verification_token.size
+      assert verification_token != new_verification_token # there's a NEW, fresh {account_verification_key}
+
+  # verify account
     end
   end
 end
