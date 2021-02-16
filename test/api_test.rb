@@ -106,6 +106,7 @@ class ApotonickApiTest < Minitest::Spec
       # def verify_account_table;     :users; end
       def account_id_column;        :id; end
       def account_unverified_status_value; end # FIXME: this method is actually not "used" in Rodauth when {skip_status_checks?} but it's still called.
+      def account_status_column;        :id; end
 
       def random_key
         Class.new do # FIXME: we don't want all methods from Base!
@@ -155,6 +156,7 @@ class ApotonickApiTest < Minitest::Spec
         @account
       end
       def account_id
+        return unless @account
         @account.fetch(:id)
       end
 
@@ -162,6 +164,13 @@ class ApotonickApiTest < Minitest::Spec
       def save_account(account:)
         @account = account # FIXME: mutable state on the instance, not good.
         super()
+      end
+      def verify_account(account:)
+        @account = account # FIXME: mutable state on the instance, not good.
+        #super() # DISCUSS: {#verify_account} sets a status that we don't want (do we?)
+
+
+        remove_verify_account_key
       end
       attr_reader :account
 
@@ -226,9 +235,15 @@ class ApotonickApiTest < Minitest::Spec
   # VERIFY account
       # trb NOTE: this happens in the PM {find_process_model}
       require "rack/utils" # FOR {timing_safe_eql?}
+      api = MyRodauthApi.new(db)
       # puts "yuuuse WE CALL account_from_verify_account_key"
       account = api.account_from_verify_account_key("1_#{new_verification_token}") # FIXME: why do we need to prefix the user ID here?
       assert_equal "bla", account[0][:email]
+
+      api = MyRodauthApi.new(db)
+      api.verify_account(account: account[0])
+
+      assert_equal [], db[:account_verification_keys].rows
 
     end
   end
