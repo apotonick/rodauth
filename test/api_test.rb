@@ -1,6 +1,7 @@
 require "test_helper"
 
 require "rodauth/features/base"
+require "rodauth/features/email_base"
 require "rodauth/features/create_account"
 require "rodauth/features/verify_account"
 require "rodauth/features/login_password_requirements_base"
@@ -37,6 +38,10 @@ class ApotonickApiTest < Minitest::Spec
 
       def empty?
         rows.empty?
+      end
+
+      def get(key)
+        rows[0][key] # FIXME: eh
       end
 
       class Gettable
@@ -76,7 +81,7 @@ class ApotonickApiTest < Minitest::Spec
     end
 
 
-    api = Class.new do
+    MyRodauthApi = Class.new do
       def initialize(db)
         @db = db
       end
@@ -100,11 +105,29 @@ class ApotonickApiTest < Minitest::Spec
       def accounts_table;           :users; end
       # def verify_account_table;     :users; end
       def account_id_column;        :id; end
+      def account_unverified_status_value; end # FIXME: this method is actually not "used" in Rodauth when {skip_status_checks?} but it's still called.
 
       def random_key
         Class.new do # FIXME: we don't want all methods from Base!
           include Rodauth::FEATURES[:base]
         end.new(1).send(:random_key)
+      end
+
+      def account_from_key(*args, &block)
+        base = Class.new do # FIXME: we don't want all methods from EmailBase!
+          include Rodauth::FEATURES[:email_base]
+          include Rodauth::FEATURES[:base] # we need {split_token}
+
+          def db
+            @__injected_db # FIXME: this sucks big time
+          end
+          def accounts_table;           :users; end
+          def account_id_column;        :id; end
+
+        end.new(nil)
+
+        base.instance_variable_set(:@__injected_db, db)
+        base.send(:account_from_key, *args, &block)
       end
 
 
@@ -143,7 +166,9 @@ class ApotonickApiTest < Minitest::Spec
       attr_reader :account
 
       include ResetVerifyAccountKey
-    end.new(db)
+    end
+
+    api = MyRodauthApi.new(db)
 
 
 
@@ -152,6 +177,9 @@ class ApotonickApiTest < Minitest::Spec
     # UI does email check, also uniqueness
     #
     # TODO: use all in {password_requirements}
+
+    # we skip all status checks from Rodauth because that's what our workflow does for us.
+    # Luckily, Rodauth makes it simple to skip those
 
     account = api.new_account("bla") # Rodauth uses {login} which is any unique string. Make email check in web.ui.
 
@@ -195,7 +223,13 @@ class ApotonickApiTest < Minitest::Spec
       assert_equal 43, new_verification_token.size
       assert verification_token != new_verification_token # there's a NEW, fresh {account_verification_key}
 
-  # verify account
+  # VERIFY account
+      # trb NOTE: this happens in the PM {find_process_model}
+      require "rack/utils" # FOR {timing_safe_eql?}
+      # puts "yuuuse WE CALL account_from_verify_account_key"
+      account = api.account_from_verify_account_key("1_#{new_verification_token}") # FIXME: why do we need to prefix the user ID here?
+      assert_equal "bla", account[0][:email]
+
     end
   end
 end
