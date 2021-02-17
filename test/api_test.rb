@@ -4,8 +4,17 @@ require "rodauth/features/base"
 require "rodauth/features/email_base"
 require "rodauth/features/create_account"
 require "rodauth/features/verify_account"
+require "rodauth/features/reset_password"
 require "rodauth/features/login_password_requirements_base"
 require "bcrypt"
+      module Sequel
+        CURRENT_TIMESTAMP = Class.new do
+          def >(b)
+            # raise b.inspect
+            b
+          end
+        end.new
+      end
 
 class ApotonickApiTest < Minitest::Spec
   it "what" do
@@ -24,6 +33,10 @@ class ApotonickApiTest < Minitest::Spec
       def where(options)
         puts "WHERE: @@@@@ #{options.inspect}"
 
+        if options == :deadline # reset_password.rb:195
+          return Deletable.new # the table with password-reset-keys is empty
+        end
+
         column_name = options.keys.first
         value = options[column_name]
 
@@ -41,7 +54,18 @@ class ApotonickApiTest < Minitest::Spec
       end
 
       def get(key)
+        return nil if rows.empty?
         rows[0][key] # FIXME: eh
+      end
+
+      def update(options)
+        # raise options.inspect
+        rows[0].merge!(options)
+      end
+
+      class Deletable
+        def delete
+        end
       end
 
       class Gettable
@@ -62,6 +86,12 @@ class ApotonickApiTest < Minitest::Spec
         def empty?
           @set.empty?
         end
+
+        def where(options)
+          if options == :deadline # reset_password.rb:195
+            return Deletable.new # the table with password-reset-keys is empty
+          end
+        end
       end
     end
 
@@ -69,6 +99,7 @@ class ApotonickApiTest < Minitest::Spec
       {
         :users => Table.new([]),
         :account_verification_keys => Table.new([]),
+        :account_password_reset_keys => Table.new([]),
       }
     )
 
@@ -92,6 +123,7 @@ class ApotonickApiTest < Minitest::Spec
       include Rodauth::FEATURES[:create_account]
       include Rodauth::FEATURES[:verify_account]
       include Rodauth::FEATURES[:login_password_requirements_base] # {#password_hash} and friends.
+      include Rodauth::FEATURES[:reset_password]
 
 
       def login_column # DISCUSS: add keyword arg?
@@ -103,12 +135,14 @@ class ApotonickApiTest < Minitest::Spec
       end
 
       def accounts_table;           :users; end
+      # def account_password_reset_keys_table;           :account_password_reset_keys; end
       # def verify_account_table;     :users; end
       def account_id_column;        :id; end
       def account_unverified_status_value; end # FIXME: this method is actually not "used" in Rodauth when {skip_status_checks?} but it's still called.
       def account_status_column;        :id; end
 
       def random_key
+        puts "raaaaaaa"
         Class.new do # FIXME: we don't want all methods from Base!
           include Rodauth::FEATURES[:base]
         end.new(1).send(:random_key)
@@ -160,6 +194,9 @@ class ApotonickApiTest < Minitest::Spec
         @account.fetch(:id)
       end
 
+      def set_deadline_value(*) # FIXME: this uses a lot of Sequel
+      end
+
 
       def save_account(account:)
         @account = account # FIXME: mutable state on the instance, not good.
@@ -167,10 +204,15 @@ class ApotonickApiTest < Minitest::Spec
       end
       def verify_account(account:)
         @account = account # FIXME: mutable state on the instance, not good.
-        #super() # DISCUSS: {#verify_account} sets a status that we don't want (do we?)
-
+        #super() # DISCUSS: {#verify_account} sets a status that we don't want (do we?
 
         remove_verify_account_key
+      end
+      def reset_password_request(account:)
+        @account = account # FIXME: mutable state on the instance, not good.
+
+        generate_reset_password_key_value
+        create_reset_password_key
       end
       attr_reader :account
 
@@ -245,6 +287,26 @@ class ApotonickApiTest < Minitest::Spec
 
       assert_equal [], db[:account_verification_keys].rows
 
+  # request RESET PASSWORD
+      api = MyRodauthApi.new(db)
+      # require "sequel"
+
+      api.reset_password_request(account: account[0])
+
+      assert password_reset_token = db[:account_password_reset_keys].rows[0][:key]
+      assert_equal 1, db[:account_password_reset_keys].rows[0][:id]
+
+
+
+      # api.reset_password(account: account[0])
+
+# TODO
+# * set our {state} ourselves in the lib lane.
+# * email sending could be a separate task?
+# DISCUSS
+# * do we need checks like {check_already_logged_in} or can the (lib) state machine prevent us from having to do this?
+# * can we lock-in public Rodauth methods we use here? (@jeremy/@janko)
     end
+
   end
 end
