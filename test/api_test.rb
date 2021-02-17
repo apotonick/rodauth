@@ -139,6 +139,7 @@ class ApotonickApiTest < Minitest::Spec
       # def verify_account_table;     :users; end
       def account_id_column;        :id; end
       def account_unverified_status_value; end # FIXME: this method is actually not "used" in Rodauth when {skip_status_checks?} but it's still called.
+      def account_open_status_value; end # FIXME: this method is actually not "used" in Rodauth when {skip_status_checks?} but it's still called.
       def account_status_column;        :id; end
 
       def random_key
@@ -213,6 +214,13 @@ class ApotonickApiTest < Minitest::Spec
 
         generate_reset_password_key_value
         create_reset_password_key
+      end
+
+      def reset_password(account:)
+        @account = account # FIXME: mutable state on the instance, not good.
+
+        set_password(password)
+        remove_reset_password_key
       end
       attr_reader :account
 
@@ -289,13 +297,14 @@ class ApotonickApiTest < Minitest::Spec
 
   # request RESET PASSWORD
       api = MyRodauthApi.new(db)
-      # require "sequel"
-
       api.reset_password_request(account: account[0])
 
-      assert password_reset_token = db[:account_password_reset_keys].rows[0][:key]
+      assert password_reset_key = db[:account_password_reset_keys].rows[0][:key]
       assert_equal 1, db[:account_password_reset_keys].rows[0][:id]
-
+  # RESET PASSWORD
+      api = MyRodauthApi.new(db)
+      account = api.account_from_reset_password_key("1_#{password_reset_key}")
+      assert_equal "bla", account[0][:email]
 
 
       # api.reset_password(account: account[0])
