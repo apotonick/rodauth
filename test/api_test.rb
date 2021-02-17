@@ -87,6 +87,10 @@ class ApotonickApiTest < Minitest::Spec
           @set.empty?
         end
 
+        def update(options)
+          @set[0].merge!(options)
+        end
+
         def where(options)
           if options == :deadline # reset_password.rb:195
             return Deletable.new # the table with password-reset-keys is empty
@@ -125,6 +129,8 @@ class ApotonickApiTest < Minitest::Spec
       include Rodauth::FEATURES[:login_password_requirements_base] # {#password_hash} and friends.
       include Rodauth::FEATURES[:reset_password]
 
+      include Rodauth::FEATURES[:base] # FIXME: currently used for {#random_key} and {#update_account}
+
 
       def login_column # DISCUSS: add keyword arg?
         :email
@@ -142,12 +148,17 @@ class ApotonickApiTest < Minitest::Spec
       def account_open_status_value; end # FIXME: this method is actually not "used" in Rodauth when {skip_status_checks?} but it's still called.
       def account_status_column;        :id; end
 
-      def random_key
-        puts "raaaaaaa"
-        Class.new do # FIXME: we don't want all methods from Base!
-          include Rodauth::FEATURES[:base]
-        end.new(1).send(:random_key)
-      end
+      # def random_key
+      #   Class.new do # FIXME: we don't want all methods from Base!
+      #     include Rodauth::FEATURES[:base]
+      #   end.new(1).send(:random_key)
+      # end
+
+      # def update_account(*args)
+      #   Class.new do # FIXME: we don't want all methods from Base!
+      #     include Rodauth::FEATURES[:base]
+      #   end.new(1).send(:update_account, *args)
+      # end
 
       def account_from_key(*args, &block)
         base = Class.new do # FIXME: we don't want all methods from EmailBase!
@@ -198,7 +209,6 @@ class ApotonickApiTest < Minitest::Spec
       def set_deadline_value(*) # FIXME: this uses a lot of Sequel
       end
 
-
       def save_account(account:)
         @account = account # FIXME: mutable state on the instance, not good.
         super()
@@ -216,7 +226,7 @@ class ApotonickApiTest < Minitest::Spec
         create_reset_password_key
       end
 
-      def reset_password(account:)
+      def reset_password(account:, password:)
         @account = account # FIXME: mutable state on the instance, not good.
 
         set_password(password)
@@ -260,6 +270,7 @@ class ApotonickApiTest < Minitest::Spec
         #       "$2a$12$YBwAo1wNThzSNKzqUVjqkOvHhr/2ZcRFX/jPr784qVd1VTh26fywa",
         #      :id=>1}
   # account CREATED
+      password_hashed = db[:users].rows[0][:password_hashed]
       assert_equal 60, db[:users].rows[0][:password_hashed].size
 
 
@@ -306,8 +317,11 @@ class ApotonickApiTest < Minitest::Spec
       account = api.account_from_reset_password_key("1_#{password_reset_key}")
       assert_equal "bla", account[0][:email]
 
+      api = MyRodauthApi.new(db)
+      api.reset_password(account: account[0], password: "new")
 
-      # api.reset_password(account: account[0])
+      assert_equal 60, db[:users].rows[0][:password_hashed].size
+      assert db[:users].rows[0][:password_hashed] != password_hashed
 
 # TODO
 # * set our {state} ourselves in the lib lane.
