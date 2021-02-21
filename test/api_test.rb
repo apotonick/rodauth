@@ -107,14 +107,34 @@ class ApotonickApiTest < Minitest::Spec
       }
     )
 
-    module ResetVerifyAccountKey
-      def reset_verify_account_key # DISCUSS: should we add this to Rodauth itself? See https://twitter.com/jeremyevans0/status/1361346774703562758
-        remove_verify_account_key
-        generate_verify_account_key_value
-        create_verify_account_key
-      end
-    end
+      # def random_key
+      #   Class.new do # FIXME: we don't want all methods from Base!
+      #     include Rodauth::FEATURES[:base]
+      #   end.new(1).send(:random_key)
+      # end
 
+      # def update_account(*args)
+      #   Class.new do # FIXME: we don't want all methods from Base!
+      #     include Rodauth::FEATURES[:base]
+      #   end.new(1).send(:update_account, *args)
+      # end
+
+      # def account_from_key(*args, &block)
+      #   base = Class.new do # FIXME: we don't want all methods from EmailBase!
+      #     include Rodauth::FEATURES[:email_base]
+      #     include Rodauth::FEATURES[:base] # we need {split_token}
+
+      #     def db
+      #       @__injected_db # FIXME: this sucks big time
+      #     end
+      #     def accounts_table;           :users; end
+      #     def account_id_column;        :id; end
+
+      #   end.new(nil)
+
+      #   base.instance_variable_set(:@__injected_db, db)
+      #   base.send(:account_from_key, *args, &block)
+      # end
 
     MyRodauthApi = Class.new do
       def initialize(db)
@@ -129,17 +149,11 @@ class ApotonickApiTest < Minitest::Spec
       include Rodauth::FEATURES[:login_password_requirements_base] # {#password_hash} and friends.
       include Rodauth::FEATURES[:reset_password]
 
+      # FIXME: is it clever to include those two modules with all the baggage?
       include Rodauth::FEATURES[:base] # FIXME: currently used for {#random_key} and {#update_account}
+      include Rodauth::FEATURES[:email_base]# {#account_from_key}
 
-
-      def login_column # DISCUSS: add keyword arg?
-        :email
-      end
-
-      def skip_status_checks? # DISCUSS: this is done by the workflow
-        true
-      end
-
+      def login_column; :email; end
       def accounts_table;           :users; end
       # def account_password_reset_keys_table;           :account_password_reset_keys; end
       # def verify_account_table;     :users; end
@@ -147,36 +161,8 @@ class ApotonickApiTest < Minitest::Spec
       def account_unverified_status_value; end # FIXME: this method is actually not "used" in Rodauth when {skip_status_checks?} but it's still called.
       def account_open_status_value; end # FIXME: this method is actually not "used" in Rodauth when {skip_status_checks?} but it's still called.
       def account_status_column;        :id; end
-
-      # def random_key
-      #   Class.new do # FIXME: we don't want all methods from Base!
-      #     include Rodauth::FEATURES[:base]
-      #   end.new(1).send(:random_key)
-      # end
-
-      # def update_account(*args)
-      #   Class.new do # FIXME: we don't want all methods from Base!
-      #     include Rodauth::FEATURES[:base]
-      #   end.new(1).send(:update_account, *args)
-      # end
-
-      def account_from_key(*args, &block)
-        base = Class.new do # FIXME: we don't want all methods from EmailBase!
-          include Rodauth::FEATURES[:email_base]
-          include Rodauth::FEATURES[:base] # we need {split_token}
-
-          def db
-            @__injected_db # FIXME: this sucks big time
-          end
-          def accounts_table;           :users; end
-          def account_id_column;        :id; end
-
-        end.new(nil)
-
-        base.instance_variable_set(:@__injected_db, db)
-        base.send(:account_from_key, *args, &block)
-      end
-
+      def account_password_hash_column; :password_hashed; end
+      attr_reader :account
 
       def raises_uniqueness_violation?
         yield
@@ -193,9 +179,6 @@ class ApotonickApiTest < Minitest::Spec
       def send_verify_account_email # FIXME: for now, we want that done manually in Tyrant.
       end
 
-      def account_password_hash_column
-        :password_hashed
-      end
 
       # needed in {verify_account.rb:195:in `new_account'}
       def account_from_login(*) # FIXME: this should be changed in Roda, this is called unnecessarily.
@@ -232,9 +215,13 @@ class ApotonickApiTest < Minitest::Spec
         set_password(password)
         remove_reset_password_key
       end
-      attr_reader :account
 
-      include ResetVerifyAccountKey
+      def reset_verify_account_key # DISCUSS: should we add this to Rodauth itself? See https://twitter.com/jeremyevans0/status/1361346774703562758
+        remove_verify_account_key
+        generate_verify_account_key_value
+        create_verify_account_key
+      end
+
     end
 
     api = MyRodauthApi.new(db)
@@ -323,6 +310,7 @@ class ApotonickApiTest < Minitest::Spec
       assert_equal 60, db[:users].rows[0][:password_hashed].size
       assert db[:users].rows[0][:password_hashed] != password_hashed
 
+      pp db[:users]
 # TODO
 # * set our {state} ourselves in the lib lane.
 # * email sending could be a separate task?
