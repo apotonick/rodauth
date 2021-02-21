@@ -196,6 +196,7 @@ class ApotonickApiTest < Minitest::Spec
         @account = account # FIXME: mutable state on the instance, not good.
         super()
       end
+
       def verify_account(account:)
         @account = account # FIXME: mutable state on the instance, not good.
         #super() # DISCUSS: {#verify_account} sets a status that we don't want (do we?
@@ -220,6 +221,8 @@ class ApotonickApiTest < Minitest::Spec
         remove_verify_account_key
         generate_verify_account_key_value
         create_verify_account_key
+
+        return account, @verify_account_key_value, token_param(@verify_account_key_value)
       end
 
     end
@@ -274,11 +277,14 @@ class ApotonickApiTest < Minitest::Spec
 
   # RESET {verification_key}
   #   TODO: what about email?
-      api.reset_verify_account_key
+      account, key, token_query = api.reset_verify_account_key
 
       assert new_verification_token = db[:account_verification_keys].rows[0][:key]
       assert_equal 43, new_verification_token.size
+      assert_equal key, new_verification_token
+
       assert verification_token != new_verification_token # there's a NEW, fresh {account_verification_key}
+      assert_equal "#{account[:id]}_#{key}", token_query
 
   # VERIFY account
       # trb NOTE: this happens in the PM {find_process_model}
