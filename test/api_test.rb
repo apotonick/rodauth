@@ -225,6 +225,11 @@ class ApotonickApiTest < Minitest::Spec
         return account, @verify_account_key_value, token_param(@verify_account_key_value)
       end
 
+      def setup_account_verification
+        super()
+        return account, @verify_account_key_value, token_param(@verify_account_key_value)
+      end
+
     end
 
     api = MyRodauthApi.new(db)
@@ -265,12 +270,14 @@ class ApotonickApiTest < Minitest::Spec
 
 
       # this usually happens via a {after_create_account} hook
-      api.setup_account_verification # FIXME: also sends email
+      account, key, token_query = api.setup_account_verification # FIXME: also sends email
+
       pp db[:users]
       pp db[:account_verification_keys] # {:id,:key}
       # #<struct ApotonickApiTest::Table
       #   rows=[{:id=>1, :key=>"howmanycharactersdoweneed?"}]>
 
+      assert_equal "#{account[:id]}_#{key}", token_query
   # account_verification_key is set!
       assert verification_token = db[:account_verification_keys].rows[0][:key]
       assert_equal 43, verification_token.size
