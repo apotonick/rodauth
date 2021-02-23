@@ -222,12 +222,12 @@ class ApotonickApiTest < Minitest::Spec
         generate_verify_account_key_value
         create_verify_account_key
 
-        return account, @verify_account_key_value, token_param(@verify_account_key_value)
+        return account, @verify_account_key_value, token_param_value(@verify_account_key_value)
       end
 
       def setup_account_verification
         super()
-        return account, @verify_account_key_value, token_param(@verify_account_key_value)
+        return account, @verify_account_key_value, token_param_value(@verify_account_key_value)
       end
 
     end
