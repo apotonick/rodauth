@@ -22,6 +22,15 @@ class ApotonickApiTest < Minitest::Spec
       def [](key)
         tables.fetch(key)
       end
+
+      def current_timestamp
+        Time.now
+        "-- now --"
+      end
+
+      def date_add(now, interval)
+        "#{now} + #{interval}"
+      end
     end
     Table = Struct.new(:rows) do
       def insert(row)
@@ -189,8 +198,18 @@ class ApotonickApiTest < Minitest::Spec
         @account.fetch(:id)
       end
 
-      def set_deadline_value(*) # FIXME: this uses a lot of Sequel
+
+      # column: :deadline
+      def set_deadline_value(hash, column, interval) # TODO: can we PR this into Rodauth?
+        # raise
+        # if set_deadline_values? # this only checks {if db.database_type == :mysql}
+          # hash[column] = Sequel.date_add(Sequel::CURRENT_TIMESTAMP, interval)
+          hash[column] = db.date_add(db.current_timestamp, interval)
+          # :nocov:
+        # end
       end
+
+
 
       def save_account(account:)
         @account = account # FIXME: mutable state on the instance, not good.
@@ -221,14 +240,38 @@ class ApotonickApiTest < Minitest::Spec
         remove_verify_account_key
         generate_verify_account_key_value
         create_verify_account_key
+        _send_verify_account_email(account: account, token_param_value: token_param_value(@verify_account_key_value), db: db)
 
         return account, @verify_account_key_value, token_param_value(@verify_account_key_value)
       end
 
       def setup_account_verification
         super()
+
+
+        # TODO: send email here
+        _send_verify_account_email(account: account, token_param_value: token_param_value(@verify_account_key_value), db: db)
+
         return account, @verify_account_key_value, token_param_value(@verify_account_key_value)
       end
+
+
+      # TODO: this goes to Tyrant::Signup
+      def _send_verify_account_email(account:, token_param_value:, db:)
+        # send_email(create_verify_account_email)
+
+        set_verify_account_email_last_sent
+        # set_verification_requested_at
+      end
+
+      def set_verify_account_email_last_sent # DISCUSS: in {verify_account.rb}. fix in Rodauth?
+        verify_account_ds.update(verify_account_email_last_sent_column=>db.current_timestamp) #if verify_account_email_last_sent_column
+      end
+
+      # See {verify_account_grace_period.rb}
+      # def set_verification_requested_at # DISCUSS: doesn't exist in Rodauth.
+      #   verify_account_ds.update(verification_requested_at_column=>db.current_timestamp) # FIXME: check redundancy with {set_verify_account_email_last_sent}
+      # end
 
     end
 
@@ -281,12 +324,30 @@ class ApotonickApiTest < Minitest::Spec
   # account_verification_key is set!
       assert verification_token = db[:account_verification_keys].rows[0][:key]
       assert_equal 43, verification_token.size
+      # assert_equal "bla", db[:users].rows.inspect
+
+      assert_equal "[:email, :password_hashed, :id]", account.keys.inspect
+      assert_equal "bla", account[:email]
+      assert_equal 1, account[:id]
+      assert_equal 60, account[:password_hashed].size
+
+      account_verification_row = db[:account_verification_keys].rows[0]
+      assert_equal "[:id, :key, :email_last_sent]", account_verification_row.keys.inspect
+      assert_equal 1, account_verification_row[:id]
+      assert_equal "-- now --", account_verification_row[:email_last_sent]
+      assert_equal 43, account_verification_row[:key].size
 
   # RESET {verification_key}
   #   TODO: what about email?
       account, key, token_query = api.reset_verify_account_key
 
-      assert new_verification_token = db[:account_verification_keys].rows[0][:key]
+      account_verification_row = db[:account_verification_keys].rows[0]
+      assert_equal "[:id, :key, :email_last_sent]", account_verification_row.keys.inspect
+      assert new_verification_token = account_verification_row[:key]
+      assert_equal 1, account_verification_row[:id]
+      assert_equal "-- now --", account_verification_row[:email_last_sent]
+      assert_equal 43, account_verification_row[:key].size
+
       assert_equal 43, new_verification_token.size
       assert_equal key, new_verification_token
 
@@ -298,7 +359,7 @@ class ApotonickApiTest < Minitest::Spec
       require "rack/utils" # FOR {timing_safe_eql?}
       api = MyRodauthApi.new(db)
       # puts "yuuuse WE CALL account_from_verify_account_key"
-      account = api.account_from_verify_account_key("1_#{new_verification_token}") # FIXME: why do we need to prefix the user ID here?
+      account = api.account_from_verify_account_key("1_#{new_verification_token}")
       assert_equal "bla", account[0][:email]
 
       api = MyRodauthApi.new(db)
@@ -310,8 +371,13 @@ class ApotonickApiTest < Minitest::Spec
       api = MyRodauthApi.new(db)
       api.reset_password_request(account: account[0])
 
-      assert password_reset_key = db[:account_password_reset_keys].rows[0][:key]
-      assert_equal 1, db[:account_password_reset_keys].rows[0][:id]
+      password_reset_row = db[:account_password_reset_keys].rows[0]
+      assert password_reset_key = password_reset_row[:key]
+      assert_equal 1, password_reset_row[:id]
+      assert_equal "[:id, :key, :deadline]", password_reset_row.keys.inspect
+      assert_equal "-- now -- + {:days=>1}", password_reset_row[:deadline]
+
+
   # RESET PASSWORD
       api = MyRodauthApi.new(db)
       account = api.account_from_reset_password_key("1_#{password_reset_key}")
@@ -322,6 +388,9 @@ class ApotonickApiTest < Minitest::Spec
 
       assert_equal 60, db[:users].rows[0][:password_hashed].size
       assert db[:users].rows[0][:password_hashed] != password_hashed
+
+      password_reset_row = db[:account_password_reset_keys].rows[0]
+      assert_nil password_reset_row
 
       pp db[:users]
 # TODO
@@ -334,3 +403,5 @@ class ApotonickApiTest < Minitest::Spec
 
   end
 end
+
+# Tyrant: Rodauth's logic, DB agnostic, Trailblazer's rendering, TRB workflows
